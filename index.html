@@ -1,14 +1,49 @@
-<!-- OneSignal Web SDK v16 -->
-<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-<script>
-  window.OneSignalDeferred = window.OneSignalDeferred || [];
-  OneSignalDeferred.push(async function (OneSignal) {
-    await OneSignal.init({
-      appId: "4d4e6237-e321-4209-a655-faac69188a85",
-      // важное: абсолютные пути и совпадающий scope
-      serviceWorkerPath: "/laneline-pages/OneSignalSDKWorker.js",
-      serviceWorkerUpdaterPath: "/laneline-pages/OneSignalSDKUpdaterWorker.js",
-      serviceWorkerParam: { scope: "/laneline-pages/" }
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Lane-Line Push — диагностика</title>
+</head>
+<body>
+  <h1>Страница жива ✅</h1>
+  <p id="status">Готовим OneSignal…</p>
+
+  <!-- SDK грузим один раз -->
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+
+  <script>
+    // Показываем шаги прямо на странице
+    const s = (msg) => document.getElementById('status').textContent = msg;
+
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push(async function (OneSignal) {
+      try {
+        s('Инициализация OneSignal…');
+
+        await OneSignal.init({
+          appId: "4d4e6237-e321-4209-a655-faac69188a85",
+          serviceWorkerPath: "OneSignalSDKWorker.js",
+          serviceWorkerUpdaterPath: "OneSignalSDKUpdaterWorker.js",
+          serviceWorkerParam: { scope: "/laneline-pages/" } // важен хвост
+        });
+
+        s('OneSignal инициализирован. Ждём регистрацию SW…');
+
+        // Небольшая задержка и проверка состояния
+        setTimeout(async () => {
+          try {
+            const perm = await OneSignal.Notifications.getPermissionStatus();
+            s('Готово. Статус разрешений: ' + perm + '. Если "default" — появится запрос на разрешение.');
+          } catch(e){
+            s('Инициализация прошла, но запрос статуса не удался: ' + (e && e.message));
+          }
+        }, 1000);
+
+      } catch (e) {
+        s('Ошибка инициализации: ' + (e && e.message ? e.message : e));
+      }
     });
-  });
-</script>
+  </script>
+</body>
+</html>
