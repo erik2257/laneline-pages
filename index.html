@@ -1,27 +1,26 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Lane-Line Company 22</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lane-Line Push</title>
 
-  <!-- Подключение OneSignal SDK -->
+  <!-- OneSignal Web SDK v16 -->
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
   <script>
     window.OneSignalDeferred = window.OneSignalDeferred || [];
-    OneSignalDeferred.push(async function(OneSignal) {
+    OneSignalDeferred.push(async function (OneSignal) {
       await OneSignal.init({
-        appId: "4d4e6237-e321-4209-a655-faac69188a85", // Твой реальный App ID
-        safari_web_id: null, // Оставь null, если нет отдельного Safari ID
-        notifyButton: { enable: true }, // Кнопка подписки
-        serviceWorkerPath: "/laneline-pages/OneSignalSDKWorker.js", // путь к воркеру в подпапке
-        serviceWorkerUpdaterPath: "/laneline-pages/OneSignalSDKUpdaterWorker.js"
+        appId: "4d4e6237-e321-4209-a655-faac69188a85",
+        serviceWorkerPath: "OneSignalSDKWorker.js",
+        serviceWorkerUpdaterPath: "OneSignalSDKUpdaterWorker.js",
+        serviceWorkerParam: { scope: "/laneline-pages/" } // ВАЖНО: с хвостом
       });
     });
   </script>
 </head>
 <body>
-  <h1>Lane-Line Company 22</h1>
-  <p>Проверка работы пуш-уведомлений OneSignal.</p>
+  <h1>Lane-Line — Web Push активен</h1>
+  <p>Если браузер спросил «Разрешить уведомления» — всё подключено правильно.</p>
 </body>
 </html>
