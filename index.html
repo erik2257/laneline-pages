@@ -1,127 +1,100 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Lane-Line Push — диагностика</title>
-
-  <!-- OneSignal Web SDK v16 -->
-  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-
+  <meta charset="UTF-8">
+  <title>Lane-Line — Web Push диагностика</title>
   <style>
-    :root{color-scheme:light dark}
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:22px;line-height:1.45}
-    .wrap{max-width:840px;margin:0 auto}
-    h1{margin:0 0 8px}
-    .card{border:1px solid hsl(0 0% 50% / .2);border-radius:14px;padding:14px 16px;margin:12px 0}
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    .muted{opacity:.75}
-    code{padding:.2em .4em;border-radius:.4em;background:hsl(220 15% 90% / .3)}
-    button{padding:10px 14px;border:0;border-radius:10px;background:#2d6cdf;color:#fff;cursor:pointer}
-    button.secondary{background:#666}
-    .ok{color:#13a113;font-weight:600}
-    .warn{color:#c98a00;font-weight:600}
-    .err{color:#d02121;font-weight:600}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:20px}
+    button{margin:6px 8px 6px 0;padding:10px 14px;border:0;border-radius:10px}
+    .ok{color:#118a00}.warn{color:#b36b00}.err{color:#c52020}
+    #panel{margin-top:16px}
+    code{background:#f3f3f4;padding:2px 6px;border-radius:6px}
   </style>
-
-  <script>
-    // Константы для твоего проекта на GitHub Pages
-    const APP_ID = "4d4e6237-e321-4209-a655-faac69188a85";
-    const SCOPE  = "/laneline-pages/";
-    const SW     = "/laneline-pages/OneSignalSDKWorker.js";
-    const SW_UPD = "/laneline-pages/OneSignalSDKUpdaterWorker.js";
-
-    const $ = id => document.getElementById(id);
-    const set = (id, txt, cls="") => { const el=$(id); if(el){ el.textContent = txt; el.className = cls; } };
-
-    // Инициализация OneSignal v16 (без устаревших методов)
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    window.OneSignalDeferred.push(async function (OneSignal) {
-      try {
-        set("sdkStatus", "инициализация…", "warn");
-
-        await OneSignal.init({
-          appId: APP_ID,
-          serviceWorkerPath: SW,
-          serviceWorkerUpdaterPath: SW_UPD,
-          serviceWorkerParam: { scope: SCOPE },
-          notifyButton: { enable: true }
-        });
-
-        set("sdkStatus", "OK • инициализирован", "ok");
-        // статус разрешений берём из стандартного API браузера
-        set("permStatus", Notification.permission, Notification.permission === "granted" ? "ok" : (Notification.permission === "denied" ? "err" : "warn"));
-
-        // после init проверим регистрацию SW
-        checkSW();
-      } catch (e) {
-        set("sdkStatus", "ошибка: " + (e && e.message || e), "err");
-      }
-    });
-
-    async function askPermission() {
-      try {
-        // В v16 — запрос идёт через Notifications.requestPermission()
-        const res = await window.OneSignal.Notifications.requestPermission();
-        // В любом случае финальный статус — через стандартный Notification.permission
-        set("permStatus", Notification.permission, Notification.permission === "granted" ? "ok" : (Notification.permission === "denied" ? "err" : "warn"));
-        checkSW();
-      } catch (e) {
-        set("permStatus", "error: " + (e && e.message || e), "err");
-      }
-    }
-
-    async function checkSW() {
-      if (!("serviceWorker" in navigator)) {
-        set("swStatus","Service Worker не поддерживается","err");
-        return;
-      }
-      try {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        const hit = regs.find(r => r.scope && r.scope.endsWith(SCOPE));
-        if (hit) {
-          set("swStatus", "OK • " + hit.scope, "ok");
-        } else {
-          set("swStatus", "нет регистрации в scope " + SCOPE, "warn");
-        }
-      } catch(e) {
-        set("swStatus","ошибка проверки: " + (e && e.message || e),"err");
-      }
-    }
-
-    function resetHelp(){
-      alert("Как сбросить на телефоне:\n1) Значок замка → Параметры сайта → Очистить данные (это удалит SW/кэш только для этого сайта)\n2) Открой страницу заново: ?nocache=1\n3) Нажми «Запросить разрешение» и выбери «Разрешить»");
-    }
-  </script>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Lane-Line — Web Push диагностика</h1>
-    <p class="muted">Страница подскажет, всё ли ок: SDK, разрешение браузера и регистрация Service Worker в scope.</p>
+  <h1>Lane-Line — Web Push диагностика</h1>
+  <p>Проверяем: разрешение, регистрацию Service Worker и совпадение scope.</p>
 
-    <div class="card">
-      <div class="row">
-        <button onclick="askPermission()">Запросить разрешение</button>
-        <button class="secondary" onclick="checkSW()">Проверить SW</button>
-        <button class="secondary" onclick="resetHelp()">Сбросить (инструкция)</button>
-      </div>
-      <ul>
-        <li>Статус SDK: <span id="sdkStatus" class="warn">ожидание…</span></li>
-        <li>Разрешение браузера: <span id="permStatus" class="warn">неизвестно</span></li>
-        <li>Service Worker: <span id="swStatus" class="warn">проверяю…</span></li>
-      </ul>
-      <p class="muted">Scope: <code id="scopeShow"></code> • Worker: <code id="swShow"></code> • Updater: <code id="swUpdShow"></code></p>
-      <p class="muted">Прямые ссылки: <a id="lnkSW" href="#" target="_blank">Worker</a> · <a id="lnkSWU" href="#" target="_blank">Updater</a></p>
-    </div>
+  <button id="requestPermission">Запросить разрешение</button>
+  <button id="checkSW">Проверить SW</button>
+  <button id="reset">Сбросить (инструкция)</button>
+
+  <div id="panel">
+    <p id="permissionStatus">Разрешение браузера: —</p>
+    <p>Текущий scope страницы: <code id="pageScope">—</code></p>
+    <p id="swStatus">Service Worker: —</p>
+    <p id="scopeMatch">Совпадение scope: —</p>
   </div>
 
   <script>
-    // Показать текущие пути и ссылки
-    $("scopeShow").textContent = SCOPE;
-    $("swShow").textContent = SW;
-    $("swUpdShow").textContent = SW_UPD;
-    $("lnkSW").href  = "https://erik2257.github.io" + SW;
-    $("lnkSWU").href = "https://erik2257.github.io" + SW_UPD;
+    // ===== утилиты =====
+    function pageScope(){
+      // scope каталога текущей страницы с завершающим слешем
+      const p = location.pathname;
+      return p.endsWith('/') ? p : p.replace(/[^/]+$/, '');
+    }
+    function set(el, html){ document.getElementById(el).innerHTML = html; }
+
+    // ===== первичные значения =====
+    set('permissionStatus', "Разрешение браузера: " + Notification.permission);
+    set('pageScope', pageScope());
+
+    // ===== запрос разрешения =====
+    document.getElementById('requestPermission').addEventListener('click', async () => {
+      const permission = await Notification.requestPermission();
+      set('permissionStatus', "Разрешение браузера: " +
+        (permission === 'granted' ? '<span class=ok>granted</span>' :
+         permission === 'denied' ? '<span class=err>denied</span>' : permission));
+    });
+
+    // ===== проверка service worker и совпадения scope =====
+    document.getElementById('checkSW').addEventListener('click', async () => {
+      if (!('serviceWorker' in navigator)) {
+        set('swStatus', '<span class=err>Service Worker не поддерживается</span>');
+        set('scopeMatch', '—');
+        return;
+      }
+
+      try{
+        const regs = await navigator.serviceWorker.getRegistrations();
+        if (!regs.length){
+          set('swStatus', '<span class=err>Не найдено ни одной регистрации</span>');
+          set('scopeMatch', '<span class=err>нет</span>');
+          return;
+        }
+
+        const pgScope = pageScope();
+        // соберём инфо по всем SW
+        const info = regs.map(r => {
+          const state = r.active ? r.active.state : (r.installing ? 'installing' : 'неактивен');
+          return `${r.scope} (state: ${state})`;
+        }).join('<br>');
+
+        set('swStatus', `Найдено регистраций: ${regs.length}<br>${info}`);
+
+        // совпадает ли хоть один scope с нашим каталогом страницы
+        const matched = regs.some(r => r.scope.endsWith(pgScope));
+        if (matched){
+          set('scopeMatch', '<span class=ok>да, есть регистрация в текущем scope</span>');
+        }else{
+          set('scopeMatch', `<span class=warn>нет, среди зарегистрированных SW нет scope, заканчивающегося на</span> <code>${pgScope}</code>`);
+        }
+      }catch(e){
+        set('swStatus', '<span class=err>Ошибка проверки SW: ' + (e && e.message || e) + '</span>');
+        set('scopeMatch', '—');
+      }
+    });
+
+    // ===== сброс: краткая инструкция =====
+    document.getElementById('reset').addEventListener('click', () => {
+      alert(
+`Сброс на телефоне (Chrome):
+1) Открой адрес сайта.
+2) ⋮ → Инфо о сайте → Удалить данные (или «Очистить и сбросить»).
+3) Перезапусти вкладку.
+4) При необходимости удали SW вручную: chrome://serviceworker-internals/ → Unregister у соответствующего scope.`
+      );
+    });
   </script>
 </body>
 </html>
