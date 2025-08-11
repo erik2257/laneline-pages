@@ -3,70 +3,152 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Lane-Line Push</title>
+  <title>Lane-Line Push — диагностика</title>
 
   <!-- OneSignal Web SDK v16 (подключаем ОДИН раз) -->
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 
+  <style>
+    :root{color-scheme:light dark}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:22px;line-height:1.45}
+    .wrap{max-width:840px;margin:0 auto}
+    h1{margin:0 0 6px}
+    .card{border:1px solid hsl(0 0% 50% / .2);border-radius:14px;padding:16px 18px;margin:14px 0}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .muted{opacity:.75}
+    code{padding:.2em .4em;border-radius:.4em;background:hsl(220 15% 90% / .3)}
+    button{padding:10px 14px;border:0;border-radius:10px;background:#2d6cdf;color:#fff;cursor:pointer}
+    button.secondary{background:#666}
+    .ok{color:#13a113;font-weight:600}
+    .warn{color:#c98a00;font-weight:600}
+    .err{color:#d02121;font-weight:600}
+    ul{margin:.4em 0 .2em 1.2em}
+  </style>
+
   <script>
-    // Единый блок инициализации (с правильными путями и scope для /laneline-pages/)
+    // ====== Константы для вашего проектного URL на GitHub Pages ======
+    const APP_ID = "4d4e6237-e321-4209-a655-faac69188a85"; // твой реальный App ID
+    const SCOPE  = "/laneline-pages/";                      // область действия SW
+    const SW     = "/laneline-pages/OneSignalSDKWorker.js";
+    const SW_UPD = "/laneline-pages/OneSignalSDKUpdaterWorker.js";
+
+    // Удобные помощники вывода
+    const $ = (id) => document.getElementById(id);
+    const set = (id, text, cls) => { const el=$(id); if (!el) return; el.textContent=text; el.className=cls||""; };
+
+    // Проверка наличия регистрации SW в нужном scope
+    async function checkSW() {
+      if (!("serviceWorker" in navigator)) {
+        set("swStatus","Service Worker не поддерживается","err");
+        return false;
+      }
+      try {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        const hit = regs.find(r => r.scope && r.scope.endsWith(SCOPE));
+        if (hit) {
+          set("swStatus", "OK • зарегистрирован: " + hit.scope, "ok");
+          return true;
+        } else {
+          set("swStatus", "нет регистрации в scope " + SCOPE, "warn");
+          return false;
+        }
+      } catch(e) {
+        set("swStatus","ошибка проверки: " + (e && e.message || e),"err");
+        return false;
+      }
+    }
+
+    // Полный сброс данных origin (cookie/storage + разрешения) — на мобилках ограниченно
+    async function hardResetHint() {
+      alert("Сделай:\n1) Иконка замка → «Файлы cookie и данные сайтов» → «Удалить/Очистить и сбросить».\n2) Открой страницу снова с ?nocache=1.\n3) Разреши уведомления.\n\n(Автоматически сбросить из JS веб-страница не может — это ограничение браузера.)");
+    }
+
+    // Инициализация OneSignal с нужными путями и scope
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     window.OneSignalDeferred.push(async function (OneSignal) {
       try {
+        set("sdkStatus","загружается…","");
+
         await OneSignal.init({
-          appId: "4d4e6237-e321-4209-a655-faac69188a85",
-          // ВАЖНО: абсолютные пути и совпадающий scope для проектного URL
-          serviceWorkerPath: "/laneline-pages/OneSignalSDKWorker.js",
-          serviceWorkerUpdaterPath: "/laneline-pages/OneSignalSDKUpdaterWorker.js",
-          serviceWorkerParam: { scope: "/laneline-pages/" },
-          notifyButton: { enable: true } // колокольчик для ручной подписки
+          appId: APP_ID,
+          serviceWorkerPath: SW,
+          serviceWorkerUpdaterPath: SW_UPD,
+          serviceWorkerParam: { scope: SCOPE },
+          notifyButton: { enable: true } // колокольчик
         });
+
+        set("sdkStatus","OK • инициализирован","ok");
+
+        // Показать статус разрешений
+        const perm = await OneSignal.Notifications.getPermissionStatus();
+        set("permStatus", perm, (perm==="granted"?"ok":perm==="denied"?"err":"warn"));
+
+        // Показать возможный OneSignal User/Subscription ID (если доступно в твоей версии SDK)
+        try {
+          if (OneSignal.User && OneSignal.User.getId) {
+            const uid = await OneSignal.User.getId();
+            if (uid) set("osUser","User ID: " + uid,"ok");
+          }
+        } catch(_) {}
+
       } catch (e) {
-        console.error("OneSignal init error:", e);
+        set("sdkStatus","ошибка инициализации: " + (e && e.message || e),"err");
+      } finally {
+        // Проверим регистрацию SW после init
+        checkSW();
       }
     });
-  </script>
 
-  <style>
-    body{font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:0; padding:24px}
-    .box{max-width:720px; margin:0 auto}
-    .muted{opacity:.7}
-    button{padding:10px 14px; border:0; border-radius:10px; background:#2d6cdf; color:#fff; cursor:pointer}
-  </style>
+    // Кнопки действий
+    async function askPermission() {
+      try {
+        const res = await window.OneSignal.Notifications.requestPermission();
+        set("permStatus", res, (res==="granted"?"ok":res==="denied"?"err":"warn"));
+        // ещё раз проверим регистрацию SW (после разрешения часто завершается подписка)
+        checkSW();
+      } catch(e) {
+        set("permStatus","error: " + (e && e.message || e),"err");
+      }
+    }
+  </script>
 </head>
+
 <body>
-  <div class="box">
-    <h1>Lane-Line — Web Push</h1>
-    <p>Если ты видишь этот текст — страница прогрузилась нормально.</p>
-    <p class="muted">Колокольчик OneSignal внизу экрана позволяет подписаться вручную, если баннер не появился.</p>
-    <p><button id="permit">Запросить разрешение на уведомления</button></p>
-    <p class="muted" id="status">Статус: …</p>
+  <div class="wrap">
+    <h1>Lane-Line — Web Push диагностика</h1>
+    <p class="muted">Эта страница подскажет, где затык: SDK, разрешение, сервис-воркер или подписка.</p>
+
+    <div class="card">
+      <div class="row">
+        <button onclick="askPermission()">Запросить разрешение</button>
+        <button class="secondary" onclick="hardResetHint()">Сбросить кэш/разрешения (инструкция)</button>
+      </div>
+      <ul>
+        <li>Статус SDK: <span id="sdkStatus" class="warn">ожидание…</span></li>
+        <li>Разрешение браузера: <span id="permStatus" class="warn">неизвестно</span></li>
+        <li>Service Worker: <span id="swStatus" class="warn">проверяю…</span></li>
+        <li><span id="osUser" class="muted"></span></li>
+      </ul>
+      <p class="muted">Scope: <code id="scopeShow"></code> • Worker: <code id="swShow"></code> • Updater: <code id="swUpdShow"></code></p>
+      <p class="muted">Прямые ссылки: <a id="lnkSW" href="#" target="_blank">Worker</a> · <a id="lnkSWU" href="#" target="_blank">Updater</a></p>
+    </div>
+
+    <div class="card">
+      <p><strong>Подсказка:</strong> если «Service Worker: нет регистрации», сделай «Сбросить кэш/разрешения», перезайди по ссылке с параметром <code>?nocache=1</code> и повтори запрос разрешения.</p>
+      <p class="muted">URL страницы: <code>https://erik2257.github.io/laneline-pages/</code></p>
+    </div>
   </div>
 
   <script>
-    // Вспомогательный запрос разрешения и вывод статуса — чтобы наглядно видеть, что происходит
-    (function(){
-      const $s = document.getElementById('status');
-      function set(msg){ if($s) $s.textContent = "Статус: " + msg; }
+    // Подставим значения путей для наглядности
+    $("scopeShow").textContent = SCOPE;
+    $("swShow").textContent = SW;
+    $("swUpdShow").textContent = SW_UPD;
+    $("lnkSW").href = "https://erik2257.github.io" + SW;
+    $("lnkSWU").href = "https://erik2257.github.io" + SW_UPD;
 
-      window.OneSignalDeferred = window.OneSignalDeferred || [];
-      window.OneSignalDeferred.push(async function(OneSignal){
-        try {
-          // показать текущий статус
-          const st = await OneSignal.Notifications.getPermissionStatus();
-          set(st);
-
-          // кнопка ручного запроса
-          const btn = document.getElementById('permit');
-          if (btn) btn.onclick = async () => {
-            try {
-              const res = await OneSignal.Notifications.requestPermission();
-              set(res);
-            } catch(e){ set("error: " + (e && e.message || e)); }
-          };
-        } catch(e){ set("init error: " + (e && e.message || e)); }
-      });
-    })();
+    // Первая проверка SW, пока SDK инициализируется
+    checkSW();
   </script>
 </body>
 </html>
