@@ -2,219 +2,38 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta
-    name="viewport"
-    content="width=device-width,initial-scale=1,maximum-scale=1"
-  />
-  <title>Lane-Line — Web Push диагностика</title>
-  <style>
-    :root { --fg:#0b1220; --muted:#6b7280; --ok:#059669; --bad:#dc2626; --chip:#eef2ff; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; color: var(--fg); }
-    h1 { font-size: 28px; margin: 0 0 16px; }
-    p  { margin: 0 0 12px; color: var(--muted); }
-    .row { display:flex; flex-wrap:wrap; gap:12px; margin: 12px 0 20px; }
-    button{
-      font-size:16px; padding:10px 14px; border-radius:10px; border:1px solid #d1d5db;
-      background:#fff; cursor:pointer;
-    }
-    button:active{ transform: translateY(1px); }
-    .card{ border:1px solid #e5e7eb; border-radius:14px; padding:16px; margin:18px 0; }
-    .kv{ display:grid; grid-template-columns: 220px 1fr; gap:8px 14px; align-items:center; }
-    .key{ color:var(--muted); }
-    .val code{ background:var(--chip); padding:3px 6px; border-radius:8px; }
-    .ok{ color: var(--ok); font-weight:600; }
-    .bad{ color: var(--bad); font-weight:600; }
-    pre{ background:#0f172a; color:#d1d5db; padding:12px; border-radius:10px; overflow:auto; }
-    .tiny{ font-size:12px; color:#6b7280; }
-  </style>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Lane-Line — Web Push</title>
 
   <!-- OneSignal Web SDK v16 -->
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 </head>
 <body>
-  <h1>Lane-Line — Web Push диагностика</h1>
-  <p>Проверяем: разрешение, регистрацию Service Worker и нативную push-подписку в нужном <span><code>scope</code></span>.</p>
+  <h1>Lane-Line — Web Push</h1>
+  <p>Если видишь эту страницу — всё поднято. Разреши уведомления при запросе.</p>
 
-  <div class="row">
-    <button id="btn-perm">Запросить разрешение</button>
-    <button id="btn-check">Проверить SW</button>
-    <button id="btn-reg">Ручная регистрация SW</button>
-    <button id="btn-show">Показать IDs</button>
-  </div>
+  <script>
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    OneSignalDeferred.push(async function (OneSignal) {
+      try {
+        await OneSignal.init({
+          appId: "4d4e6237-e321-4209-a655-faac69188a85",
+          // ТВОЙ формат путей и scope под GitHub Pages (/laneline-pages/)
+          serviceWorkerPath: "/laneline-pages/OneSignalSDKWorker.js",
+          serviceWorkerUpdaterPath: "/laneline-pages/OneSignalSDKUpdaterWorker.js",
+          serviceWorkerParam: { scope: "/laneline-pages/" },
+          promptOptions: { slidedown: { enabled: false } }
+        });
 
-  <div class="card">
-    <div class="kv">
-      <div class="key">Статус SDK:</div>
-      <div class="val" id="sdk">…</div>
+        // ⬇️ привязка подписки именно к тебе
+        await OneSignal.login("erik-dev");
 
-      <div class="key">Разрешение браузера:</div>
-      <div class="val"><span id="perm">—</span></div>
-
-      <div class="key">Service Worker:</div>
-      <div class="val" id="sw">—</div>
-
-      <div class="key">native push subscription:</div>
-      <div class="val"><span id="native">—</span></div>
-
-      <div class="key">OneSignal User ID:</div>
-      <div class="val"><code id="osuid">null</code> <span class="tiny">(может быть null, это нормально)</span></div>
-
-      <div class="key">subscription id:</div>
-      <div class="val"><code id="subid">—</code></div>
-
-      <div class="key">provider token (endpoint):</div>
-      <div class="val"><code id="token">—</code></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="kv">
-      <div class="key">Пути SDK:</div>
-      <div class="val">
-        <div>WORKER: <code>/laneline-pages/OneSignalSDKWorker.js</code></div>
-        <div>UPDATER: <code>/laneline-pages/OneSignalSDKUpdaterWorker.js</code></div>
-        <div>scope: <code>/laneline-pages/</code></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="key" style="margin-bottom:8px;">Журнал</div>
-    <pre id="log"></pre>
-  </div>
-
-<script>
-  // ---- Константы ваших путей/скоупа
-  const SCOPE_PATH  = '/laneline-pages/';
-  const WORKER_URL  = '/laneline-pages/OneSignalSDKWorker.js';
-  const UPDATER_URL = '/laneline-pages/OneSignalSDKUpdaterWorker.js';
-
-  // ---- Утилиты UI
-  const $ = sel => document.querySelector(sel);
-  function setText(sel, txt){ const el=$(sel); if(el) el.textContent = txt; }
-  function setOK(id, ok){ const el=$(id); if(!el) return; el.classList.toggle('ok', !!ok); el.classList.toggle('bad', !ok); }
-  function log(msg){
-    const t = new Date().toTimeString().slice(0,8);
-    const box = $('#log');
-    box.textContent += `[${t}] ${msg}\n`;
-    box.scrollTop = box.scrollHeight;
-  }
-
-  // ---- Инициализация OneSignal v16
-  let oneSignalReady = false;
-
-  window.addEventListener('load', async () => {
-    try{
-      await OneSignal.init({
-        appId: '4d4e6237-e321-4209-a655-faac69188a85',
-        serviceWorker: {
-          path: WORKER_URL,
-          updaterPath: UPDATER_URL,
-          scope: SCOPE_PATH
-        },
-        // Включаем ручной запрос разрешений (по кнопке)
-        autoResubscribe: true,
-        promptOptions: { slidedown: { enabled: false } }
-      });
-      oneSignalReady = true;
-      setText('#sdk', 'OK • инициализирован');
-      setOK('#sdk', true);
-      log('init: done');
-
-      // Первичное обновление статусов
-      await refreshPermission();
-      await refreshIds();
-      await checkSW();
-    }catch(e){
-      setText('#sdk', `ошибка инициализации: ${String(e && e.message || e)}`);
-      setOK('#sdk', false);
-      log('init error: ' + e);
-    }
-  });
-
-  // ---- Действия кнопок
-  $('#btn-perm').addEventListener('click', async () => {
-    try{
-      await OneSignal.Notifications.requestPermission(); // покажет системный prompt
-      await refreshPermission();
-      await refreshIds();
-    }catch(e){
-      log('permission error: ' + e);
-    }
-  });
-
-  $('#btn-check').addEventListener('click', async () => {
-    await checkSW(true);
-    await refreshIds();
-  });
-
-  $('#btn-reg').addEventListener('click', async () => {
-    try{
-      const reg = await navigator.serviceWorker.register(WORKER_URL, { scope: SCOPE_PATH });
-      const ok  = !!reg.active || !!reg.installing || !!reg.waiting;
-      setText('#sw', ok ? `registered • scope: ${location.origin}${SCOPE_PATH}` : 'not registered');
-      setOK('#sw', ok);
-      log('manual SW register: ' + ok);
-      await refreshIds();
-    }catch(e){
-      setText('#sw', 'error');
-      setOK('#sw', false);
-      log('manual SW register error: ' + e);
-    }
-  });
-
-  $('#btn-show').addEventListener('click', async () => {
-    await refreshIds(true);
-  });
-
-  // ---- Помощники статусов
-  async function refreshPermission(){
-    try{
-      // v16 возвращает 'default' | 'granted' | 'denied'
-      const p = OneSignal.Notifications.permission;
-      setText('#perm', (p === 'granted') ? 'true' : (p === 'denied' ? 'false' : 'default'));
-      log('permission: ' + p);
-    }catch(e){
-      setText('#perm', 'undefined');
-      log('permission read error: ' + e);
-    }
-  }
-
-  async function refreshIds(verbose=false){
-    try{
-      const sub  = OneSignal?.User?.PushSubscription || null;
-      const osId = OneSignal?.User?.id || null;
-
-      const opted = !!(sub && sub.optedIn);
-      const subId = sub?.id   ?? null;
-      const token = sub?.token ?? null;
-
-      setText('#native', opted ? 'YES' : 'NO');
-      setText('#osuid', osId ?? 'null');
-      setText('#subid', subId ?? '…');
-      setText('#token', token ?? '…');
-
-      if(verbose){
-        log('ids: ' + JSON.stringify({ userId: osId, subId: subId, token: token }));
+        // при желании можно спросить разрешение сразу:
+        // await OneSignal.Notifications.requestPermission();
+      } catch (e) {
+        console.error("OneSignal init/login error:", e);
       }
-    }catch(e){
-      log('subs read error: ' + e);
-    }
-  }
-
-  async function checkSW(verbose=false){
-    try{
-      const reg = await navigator.serviceWorker.getRegistration(SCOPE_PATH);
-      const ok  = !!reg;
-      setText('#sw', ok ? `registered • scope: ${location.origin}${SCOPE_PATH}` : 'not registered');
-      setOK('#sw', ok);
-      if(verbose) log('sw check: ' + ok);
-    }catch(e){
-      setText('#sw', 'error');
-      setOK('#sw', false);
-      log('sw check error: ' + e);
-    }
-  }
-</script>
+    });
+  </script>
 </body>
 </html>
