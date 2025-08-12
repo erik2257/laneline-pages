@@ -5,12 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Lane-Line — Web Push диагностика</title>
 
-  <!-- OneSignal Web SDK v16 -->
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:24px}
+    button{margin:6px 8px 0 0;padding:10px 14px;border:1px solid #aaa;border-radius:8px;background:#fff}
+    #out{margin-top:16px;white-space:pre-wrap}
+    .ok{color:#0a7d13}.bad{color:#b00020}
+  </style>
+
   <script>
-    // ---------- ИНИТ OneSignal + ожидание готовности ----------
-    let OS;                             // сюда положим объект OneSignal
+    let OS;
     const osReady = new Promise((resolve) => {
       window.OneSignalDeferred = window.OneSignalDeferred || [];
       window.OneSignalDeferred.push(async (OneSignal) => {
@@ -30,43 +35,26 @@
       });
     });
 
-    // ---------- утилиты ----------
-    function log(msg){ const el = document.getElementById("out"); if (el) el.textContent = msg; }
+    function log(msg){ const el=document.getElementById('out'); if(el) el.textContent=msg; }
+    const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
 
     async function getPermission(){
-      try {
-        // если у SDK нет getPermissionStatus — используем стандартный API браузера
-        if (OS?.Notifications?.getPermissionStatus) {
-          return await OS.Notifications.getPermissionStatus();
-        }
-        if (typeof Notification !== 'undefined' && Notification.permission) {
-          return Notification.permission; // 'granted' | 'denied' | 'default'
-        }
-        return "unknown";
-      } catch(e){ return "error: " + (e && e.message || e); }
+      try{
+        if (OS?.Notifications?.getPermissionStatus) return await OS.Notifications.getPermissionStatus();
+        if (typeof Notification!=='undefined') return Notification.permission || 'unknown';
+      }catch(e){ return "error: "+(e&&e.message||e); }
+      return "unknown";
     }
 
     async function ensurePermission(){
       const st = await getPermission();
-      if (st !== 'granted') {
-        try {
-          if (OS?.Notifications?.requestPermission) {
-            await OS.Notifications.requestPermission();
-          } else if (typeof Notification !== 'undefined' && Notification.requestPermission) {
-            await Notification.requestPermission();
-          }
-        } catch(e){ log("permission error: " + (e && e.message || e)); }
+      if (st !== 'granted'){
+        try{
+          if (OS?.Notifications?.requestPermission) await OS.Notifications.requestPermission();
+          else if (Notification?.requestPermission) await Notification.requestPermission();
+        }catch(e){ log("permission error: " + (e && e.message || e)); return; }
       }
-      log("Разрешение браузера: " + (await getPermission()));
-    }
-
-    async function checkSW(){
-      await osReady;
-      if (!('serviceWorker' in navigator)) return log('SW не поддерживается');
-      const regs = await navigator.serviceWorker.getRegistrations();
-      const mine = regs.find(r => r.scope.endsWith('/laneline-pages/'));
-      if (!mine) return log("SW: не найдено регистраций для scope /laneline-pages/");
-      log("SW registered OK • scope: " + mine.scope);
+      log("Разрешение браузера: " + await getPermission());
     }
 
     async function manualRegister(){
@@ -77,30 +65,57 @@
       }catch(e){ log("manual register error: " + (e && e.message || e)); }
     }
 
+    async function checkSW(){
+      await osReady;
+      if (!('serviceWorker' in navigator)) return log('SW не поддерживается');
+      const regs = await navigator.serviceWorker.getRegistrations();
+      const mine = regs.find(r => r.scope.endsWith('/laneline-pages/'));
+      if (!mine) return log("SW: не найдено регистраций для scope /laneline-pages/");
+      const sub = await mine.pushManager.getSubscription();
+      log([
+        "SW registered OK • scope: " + mine.scope,
+        "Native push subscription: " + (sub ? "YES" : "NO")
+      ].join("\n"));
+    }
+
     async function createOptIn(){
-      const OneSignal = await osReady;
+      await osReady;
+      await ensurePermission();
+
       try{
-        await ensurePermission();                           // спросим разрешение при необходимости
-        await OneSignal.User.PushSubscription.optIn();      // создаём подписку явно
-        const id = OneSignal.User.PushSubscription.id;
-        log("subscription id: " + (id || "null"));
-      }catch(e){ log("opt-in error: " + (e && e.message || e)); }
+        await OS.User.PushSubscription.optIn();
+      }catch(e){
+        return log("opt-in error: " + (e && e.message || e));
+      }
+
+      // ждём до 30с появления OneSignal ID
+      let id = null;
+      for (let i=0;i<60;i++){
+        id = OS?.User?.PushSubscription?.id || null;
+        if (id) break;
+        await sleep(500);
+      }
+
+      // параллельно покажем состояние нативной подписки
+      let native = "unknown";
+      try{
+        const reg = await navigator.serviceWorker.getRegistration('/laneline-pages/');
+        const sub = await reg?.pushManager?.getSubscription();
+        native = sub ? "YES (endpoint present)" : "NO";
+      }catch(e){ native = "error: " + (e && e.message || e); }
+
+      log([
+        "subscription id: " + (id || "null"),
+        "native push subscription: " + native
+      ].join("\n"));
     }
 
     async function showSubId(){
       await osReady;
-      try{
-        const id = OS.User.PushSubscription.id;
-        log("subscription id: " + (id || "null"));
-      }catch(e){ log("get id error: " + (e && e.message || e)); }
+      const id = OS?.User?.PushSubscription?.id || null;
+      log("subscription id: " + (id || "null"));
     }
   </script>
-
-  <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:24px}
-    button{margin:6px 8px 0 0;padding:10px 14px;border:1px solid #aaa;border-radius:8px;background:#fff}
-    #out{margin-top:16px;white-space:pre-wrap}
-  </style>
 </head>
 <body>
   <h1>Lane-Line — Web Push диагностика</h1>
@@ -114,6 +129,6 @@
     <button onclick="showSubId()">Показать subscription ID</button>
   </div>
 
-  <p id="out">...</p>
+  <pre id="out">...</pre>
 </body>
 </html>
