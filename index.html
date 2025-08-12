@@ -5,130 +5,163 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Lane-Line — Web Push диагностика</title>
 
+  <!-- OneSignal Web SDK v16 -->
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:24px}
-    button{margin:6px 8px 0 0;padding:10px 14px;border:1px solid #aaa;border-radius:8px;background:#fff}
-    #out{margin-top:16px;white-space:pre-wrap}
-    .ok{color:#0a7d13}.bad{color:#b00020}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:20px;line-height:1.45}
+    h1{margin:0 0 12px}
+    .muted{opacity:.7}
+    .row{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0 20px}
+    button{padding:10px 14px;border:1px solid #ccc;border-radius:10px;background:#fff}
+    code,kbd{background:#f6f8fa;padding:2px 6px;border-radius:6px}
+    .ok{color:#137333}
+    .warn{color:#b06000}
+    .bad{color:#b3261e}
+    .box{max-width:860px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
   </style>
 
   <script>
-    let OS;
-    const osReady = new Promise((resolve) => {
-      window.OneSignalDeferred = window.OneSignalDeferred || [];
-      window.OneSignalDeferred.push(async (OneSignal) => {
-        try {
-          await OneSignal.init({
-            appId: "4d4e6237-e321-4209-a655-faac69188a85",
-            serviceWorkerPath: "/laneline-pages/OneSignalSDKWorker.js",
-            serviceWorkerUpdaterPath: "/laneline-pages/OneSignalSDKUpdaterWorker.js",
-            serviceWorkerParam: { scope: "/laneline-pages/" },
-          });
-          OS = OneSignal;
-          log("SDK инициализирован");
-          resolve(OneSignal);
-        } catch (e) {
-          log("SDK init error: " + (e && e.message || e));
-        }
-      });
+    const SCOPE = "/laneline-pages/"; // наш "хвост"
+    const WORKER = "/laneline-pages/OneSignalSDKWorker.js";
+    const UPDATER = "/laneline-pages/OneSignalSDKUpdaterWorker.js";
+
+    // Утилиты вывода
+    function out(id, text, cls){
+      const el = document.getElementById(id);
+      if(!el) return;
+      el.textContent = text;
+      el.className = cls || "";
+    }
+    function short(str, n=42){ if(!str) return ""; return str.length>n ? (str.slice(0,n)+"…") : str; }
+
+    // Инициализация OneSignal v16
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push(async (OneSignal) => {
+      try{
+        await OneSignal.init({
+          appId: "4d4e6237-e321-4209-a655-faac69188a85",
+          serviceWorkerPath: WORKER,
+          serviceWorkerUpdaterPath: UPDATER,
+          serviceWorkerParam: { scope: SCOPE },
+          notifyButton: { enable: false } // кнопка не нужна на диагностике
+        });
+        out("sdk","OK • инициализирован", "ok");
+      }catch(e){
+        out("sdk","ошибка инициализации: " + (e?.message || e), "bad");
+        console.error("OneSignal init error:", e);
+      }
     });
 
-    function log(msg){ const el=document.getElementById('out'); if(el) el.textContent=msg; }
-    const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
-
-    async function getPermission(){
+    // Проверки
+    async function showPermission(){
+      // Пытаемся через OneSignal v16, если нет — читаем нативный Notification.permission
+      let status = "";
       try{
-        if (OS?.Notifications?.getPermissionStatus) return await OS.Notifications.getPermissionStatus();
-        if (typeof Notification!=='undefined') return Notification.permission || 'unknown';
-      }catch(e){ return "error: "+(e&&e.message||e); }
-      return "unknown";
-    }
-
-    async function ensurePermission(){
-      const st = await getPermission();
-      if (st !== 'granted'){
-        try{
-          if (OS?.Notifications?.requestPermission) await OS.Notifications.requestPermission();
-          else if (Notification?.requestPermission) await Notification.requestPermission();
-        }catch(e){ log("permission error: " + (e && e.message || e)); return; }
-      }
-      log("Разрешение браузера: " + await getPermission());
-    }
-
-    async function manualRegister(){
-      await osReady;
-      try{
-        const reg = await navigator.serviceWorker.register('/laneline-pages/OneSignalSDKWorker.js', { scope: '/laneline-pages/' });
-        log("SW вручную зарегистрирован • scope: " + reg.scope);
-      }catch(e){ log("manual register error: " + (e && e.message || e)); }
+        const OS = window.OneSignal;
+        if(OS && OS.Notifications && OS.Notifications.getPermissionStatus){
+          status = await OS.Notifications.getPermissionStatus();
+        }else{
+          status = (typeof Notification !== "undefined") ? Notification.permission : "unsupported";
+        }
+      }catch(e){ status = "error: " + (e?.message || e); }
+      out("perm","" + status, status==="granted" ? "ok" : (status==="denied"?"bad":"warn"));
     }
 
     async function checkSW(){
-      await osReady;
-      if (!('serviceWorker' in navigator)) return log('SW не поддерживается');
-      const regs = await navigator.serviceWorker.getRegistrations();
-      const mine = regs.find(r => r.scope.endsWith('/laneline-pages/'));
-      if (!mine) return log("SW: не найдено регистраций для scope /laneline-pages/");
-      const sub = await mine.pushManager.getSubscription();
-      log([
-        "SW registered OK • scope: " + mine.scope,
-        "Native push subscription: " + (sub ? "YES" : "NO")
-      ].join("\n"));
-    }
-
-    async function createOptIn(){
-      await osReady;
-      await ensurePermission();
-
       try{
-        await OS.User.PushSubscription.optIn();
+        const reg = await navigator.serviceWorker.getRegistration(SCOPE);
+        if(!reg){
+          out("sw","нет регистраций в scope " + SCOPE, "warn");
+          return;
+        }
+        // Совпадение scope
+        const scopeOk = (reg.scope && reg.scope.endsWith(SCOPE));
+        out("sw", `registered • scope: ${reg.scope}`, scopeOk ? "ok" : "warn");
+
+        // Проверим наличие нативной подписки
+        const sub = await reg.pushManager.getSubscription();
+        if(sub){
+          const ep = sub.endpoint || "";
+          out("native", "YES • " + short(ep, 64), "ok");
+        }else{
+          out("native","NO", "warn");
+        }
       }catch(e){
-        return log("opt-in error: " + (e && e.message || e));
+        out("sw","error: " + (e?.message || e), "bad");
       }
+    }
 
-      // ждём до 30с появления OneSignal ID
-      let id = null;
-      for (let i=0;i<60;i++){
-        id = OS?.User?.PushSubscription?.id || null;
-        if (id) break;
-        await sleep(500);
-      }
-
-      // параллельно покажем состояние нативной подписки
-      let native = "unknown";
+    async function manualRegisterSW(){
       try{
-        const reg = await navigator.serviceWorker.getRegistration('/laneline-pages/');
-        const sub = await reg?.pushManager?.getSubscription();
-        native = sub ? "YES (endpoint present)" : "NO";
-      }catch(e){ native = "error: " + (e && e.message || e); }
-
-      log([
-        "subscription id: " + (id || "null"),
-        "native push subscription: " + native
-      ].join("\n"));
+        const reg = await navigator.serviceWorker.register(WORKER, { scope: SCOPE });
+        out("sw", `registered • scope: ${reg.scope}`, "ok");
+      }catch(e){
+        out("sw","manual register error: " + (e?.message || e), "bad");
+      }
     }
 
-    async function showSubId(){
-      await osReady;
-      const id = OS?.User?.PushSubscription?.id || null;
-      log("subscription id: " + (id || "null"));
+    async function requestPerm(){
+      try{
+        // Попросим разрешение через OneSignal v16 если доступно
+        const OS = window.OneSignal;
+        let res = "";
+        if(OS && OS.Notifications && OS.Notifications.requestPermission){
+          res = await OS.Notifications.requestPermission();
+        }else if(typeof Notification !== "undefined" && Notification.requestPermission){
+          res = await Notification.requestPermission();
+        }else{
+          res = "unsupported";
+        }
+        out("perm", "" + res, res==="granted" ? "ok" : (res==="denied"?"bad":"warn"));
+      }catch(e){
+        out("perm","error: " + (e?.message || e), "bad");
+      }
     }
+
+    async function showSubscriptionId(){
+      // Пробуем достать subscription через SW и показать endpoint/id
+      try{
+        const reg = await navigator.serviceWorker.getRegistration(SCOPE);
+        if(!reg){ out("subid","(нет регистрации SW)", "warn"); return; }
+        const sub = await reg.pushManager.getSubscription();
+        if(!sub){ out("subid","null", "warn"); return; }
+        // Покажем укороченный endpoint — как «идентификатор»
+        out("subid", short(sub.endpoint, 100), "ok");
+        console.log("native subscription:", sub);
+      }catch(e){
+        out("subid","error: " + (e?.message || e), "bad");
+      }
+    }
+
+    // Автопроверка после загрузки
+    window.addEventListener("load", async ()=>{
+      await showPermission();
+      await checkSW();
+    });
   </script>
 </head>
 <body>
-  <h1>Lane-Line — Web Push диагностика</h1>
-  <p>Проверяем: разрешение, регистрацию Service Worker и совпадание scope.</p>
+  <div class="box">
+    <h1>Lane-Line — Web Push диагностика</h1>
+    <p class="muted">Проверяем: разрешение, регистрацию Service Worker и нативную push-подписку в нужном <code class="mono">scope</code>.</p>
 
-  <div>
-    <button onclick="ensurePermission()">Запросить разрешение</button>
-    <button onclick="checkSW()">Проверить SW</button>
-    <button onclick="manualRegister()">Ручная регистрация SW</button>
-    <button onclick="createOptIn()">Создать подписку (opt-in)</button>
-    <button onclick="showSubId()">Показать subscription ID</button>
+    <div class="row">
+      <button onclick="requestPerm()">Запросить разрешение</button>
+      <button onclick="checkSW()">Проверить SW</button>
+      <button onclick="manualRegisterSW()">Ручная регистрация SW</button>
+      <button onclick="showSubscriptionId()">Показать subscription ID</button>
+    </div>
+
+    <p>Статус SDK: <b id="sdk" class="warn">…</b></p>
+    <p>Разрешение браузера: <b id="perm" class="warn">…</b></p>
+    <p>Service Worker: <b id="sw" class="warn">…</b></p>
+    <p>native push subscription: <b id="native" class="warn">…</b></p>
+    <p>subscription id / endpoint: <span id="subid" class="muted">—</span></p>
+
+    <hr>
+    <p class="muted">Пути SDK: <code class="mono">WORKER: /laneline-pages/OneSignalSDKWorker.js</code> • <code class="mono">UPDATER: /laneline-pages/OneSignalSDKUpdaterWorker.js</code> • <code class="mono">scope: /laneline-pages/</code></p>
   </div>
-
-  <pre id="out">...</pre>
 </body>
 </html>
