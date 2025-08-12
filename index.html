@@ -4,12 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Lane-Line — Web Push диагностика</title>
-
-  <!-- OneSignal Web SDK v16 -->
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-
   <script>
-    // === ИНИЦИАЛИЗАЦИЯ ===
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     OneSignalDeferred.push(async function (OneSignal) {
       try {
@@ -19,107 +15,80 @@
           serviceWorkerUpdaterPath: "/laneline-pages/OneSignalSDKUpdaterWorker.js",
           serviceWorkerParam: { scope: "/laneline-pages/" }
         });
-      } catch (e) {
-        set('sdk', 'ошибка инициализации: ' + (e?.message || e));
-      }
+        set('sdk','OK • инициализирован');
+      } catch(e){ set('sdk','ошибка инициализации: '+(e?.message||e)); }
 
-      // Обновлять статусы при изменении подписки
       OneSignal.User.PushSubscription.addEventListener('change', async () => {
-        await renderSubStatus();
+        await renderSub();
       });
-
-      // Показать текущее состояние при старте
       renderAll();
     });
 
-    // === УТИЛИТЫ ОТОБРАЖЕНИЯ ===
-    function el(id){ return document.getElementById(id); }
-    function set(id, msg){ const n = el(id); if(n) n.innerHTML = msg; }
+    function el(id){return document.getElementById(id)}
+    function set(id,txt){const n=el(id); if(n) n.innerHTML=txt}
 
-    async function renderPermission(){
-      const perm = window.OneSignal?.Notifications?.permission; // true/false в v16
-      set('perm', String(perm));
+    async function renderPerm(){
+      set('perm', String(window.OneSignal?.Notifications?.permission));
     }
-
     async function renderSW(){
       try{
         const reg = await navigator.serviceWorker.getRegistration('/laneline-pages/');
-        if (reg) {
-          set('sw', 'registered • scope: <code>https://erik2257.github.io/laneline-pages/</code>');
-        } else {
-          set('sw', 'не найден ни один registration');
-        }
-      }catch(e){
-        set('sw', 'ошибка проверки: ' + (e?.message || e));
-      }
+        set('sw', reg ? 'registered • scope: <code>https://erik2257.github.io/laneline-pages/</code>' : 'не найдено регистраций');
+      }catch(e){ set('sw','ошибка: '+(e?.message||e)); }
     }
-
-    async function renderSubStatus(){
+    async function renderSub(){
       const OS = window.OneSignal;
-      if (!OS) return;
-
-      const opted = OS.User?.PushSubscription?.optedIn === true;
+      const opted = OS?.User?.PushSubscription?.optedIn === true;
       set('native', opted ? 'YES' : 'NO');
 
-      // ВАЖНО: id и token — асинхронные
-      try {
+      try{
+        const uid = await OS.User.getId();
+        set('uid', uid ? ('<code>'+uid+'</code>') : 'null');
+      }catch{ set('uid','null'); }
+
+      try{
         const id = await OS.User.PushSubscription.id;
         set('subid', id ? ('<code>'+id+'</code>') : 'null');
-      } catch { set('subid', 'null'); }
+      }catch{ set('subid','null'); }
 
-      try {
-        const token = await OS.User.PushSubscription.token; // endpoint / prov. token
+      try{
+        const token = await OS.User.PushSubscription.token;
         set('subtoken', token ? ('<code>'+token+'</code>') : 'null');
-      } catch { set('subtoken', 'null'); }
+      }catch{ set('subtoken','null'); }
     }
+    function renderAll(){ renderPerm(); renderSW(); renderSub(); }
 
-    function renderAll(){
-      set('sdk', 'OK • инициализирован');
-      renderPermission();
-      renderSW();
-      renderSubStatus();
-    }
-
-    // === КНОПКИ ===
     async function askPermission(){
       try{ await window.OneSignal?.Notifications?.requestPermission(); }catch(e){}
-      renderPermission();
+      renderPerm();
     }
-
     async function manualRegisterSW(){
       try{
         const reg = await navigator.serviceWorker.register(
           '/laneline-pages/OneSignalSDKWorker.js',
           { scope: '/laneline-pages/' }
         );
-        set('sw', 'registered вручную • scope: <code>'+ (reg.scope || '') + '</code>');
-      }catch(e){
-        set('sw', 'ошибка регистрации: ' + (e?.message || e));
-      }
+        set('sw','registered вручную • scope: <code>'+ (reg.scope||'') + '</code>');
+      }catch(e){ set('sw','ошибка регистрации: '+(e?.message||e)); }
     }
-
     async function checkSW(){ renderSW(); }
-
     async function doOptIn(){
       try{
         await window.OneSignal?.User?.PushSubscription?.optIn();
-        await renderSubStatus();
+        await renderSub();
       }catch(e){
-        alert('opt-in error: ' + (e?.message || e));
+        set('err', 'opt-in error: '+(e?.message||e));
       }
     }
-
-    async function showId(){ await renderSubStatus(); }
+    async function showId(){ await renderSub(); }
   </script>
-
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:24px}
-    h1{margin:0 0 16px}
     .row{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0}
     button{padding:12px 16px;border:1px solid #ccc;border-radius:10px;background:#fff}
     code{background:#f4f4f4;padding:2px 6px;border-radius:6px}
-    .kv{margin:10px 0}
-    .kv b{display:inline-block;min-width:270px}
+    .kv{margin:10px 0}.kv b{display:inline-block;min-width:260px}
+    .err{color:#b00020}
   </style>
 </head>
 <body>
@@ -140,7 +109,9 @@
   <div class="kv"><b>Разрешение браузера:</b> <span id="perm">…</span></div>
   <div class="kv"><b>Service Worker:</b> <span id="sw">…</span></div>
   <div class="kv"><b>native push subscription:</b> <span id="native">…</span></div>
+  <div class="kv"><b>OneSignal User ID:</b> <span id="uid">…</span></div>
   <div class="kv"><b>subscription id:</b> <span id="subid">…</span></div>
   <div class="kv"><b>provider token (endpoint):</b> <span id="subtoken">…</span></div>
+  <div class="kv err" id="err"></div>
 </body>
 </html>
