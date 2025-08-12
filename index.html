@@ -2,93 +2,34 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Lane-Line — Web Push диагностика</title>
+
+  <!-- OneSignal Web SDK v16 -->
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+
   <script>
+    // Обязательная обёртка для v16
     window.OneSignalDeferred = window.OneSignalDeferred || [];
-    OneSignalDeferred.push(async function (OneSignal) {
-      try {
-        await OneSignal.init({
-          appId: "4d4e6237-e321-4209-a655-faac69188a85",
-          serviceWorkerPath: "/laneline-pages/OneSignalSDKWorker.js",
-          serviceWorkerUpdaterPath: "/laneline-pages/OneSignalSDKUpdaterWorker.js",
-          serviceWorkerParam: { scope: "/laneline-pages/" }
-        });
-        set('sdk','OK • инициализирован');
-      } catch(e){ set('sdk','ошибка инициализации: '+(e?.message||e)); }
-
-      OneSignal.User.PushSubscription.addEventListener('change', async () => {
-        await renderSub();
+    window.OneSignalDeferred.push(async function (OneSignal) {
+      await OneSignal.init({
+        appId: "4d4e6237-e321-4209-a655-faac69188a85",        // твой appId
+        serviceWorkerPath: "/laneline-pages/OneSignalSDKWorker.js",
+        serviceWorkerUpdaterPath: "/laneline-pages/OneSignalSDKUpdaterWorker.js",
+        serviceWorkerParam: { scope: "/laneline-pages/" }
       });
-      renderAll();
     });
-
-    function el(id){return document.getElementById(id)}
-    function set(id,txt){const n=el(id); if(n) n.innerHTML=txt}
-
-    async function renderPerm(){
-      set('perm', String(window.OneSignal?.Notifications?.permission));
-    }
-    async function renderSW(){
-      try{
-        const reg = await navigator.serviceWorker.getRegistration('/laneline-pages/');
-        set('sw', reg ? 'registered • scope: <code>https://erik2257.github.io/laneline-pages/</code>' : 'не найдено регистраций');
-      }catch(e){ set('sw','ошибка: '+(e?.message||e)); }
-    }
-    async function renderSub(){
-      const OS = window.OneSignal;
-      const opted = OS?.User?.PushSubscription?.optedIn === true;
-      set('native', opted ? 'YES' : 'NO');
-
-      try{
-        const uid = await OS.User.getId();
-        set('uid', uid ? ('<code>'+uid+'</code>') : 'null');
-      }catch{ set('uid','null'); }
-
-      try{
-        const id = await OS.User.PushSubscription.id;
-        set('subid', id ? ('<code>'+id+'</code>') : 'null');
-      }catch{ set('subid','null'); }
-
-      try{
-        const token = await OS.User.PushSubscription.token;
-        set('subtoken', token ? ('<code>'+token+'</code>') : 'null');
-      }catch{ set('subtoken','null'); }
-    }
-    function renderAll(){ renderPerm(); renderSW(); renderSub(); }
-
-    async function askPermission(){
-      try{ await window.OneSignal?.Notifications?.requestPermission(); }catch(e){}
-      renderPerm();
-    }
-    async function manualRegisterSW(){
-      try{
-        const reg = await navigator.serviceWorker.register(
-          '/laneline-pages/OneSignalSDKWorker.js',
-          { scope: '/laneline-pages/' }
-        );
-        set('sw','registered вручную • scope: <code>'+ (reg.scope||'') + '</code>');
-      }catch(e){ set('sw','ошибка регистрации: '+(e?.message||e)); }
-    }
-    async function checkSW(){ renderSW(); }
-    async function doOptIn(){
-      try{
-        await window.OneSignal?.User?.PushSubscription?.optIn();
-        await renderSub();
-      }catch(e){
-        set('err', 'opt-in error: '+(e?.message||e));
-      }
-    }
-    async function showId(){ await renderSub(); }
   </script>
+
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:24px}
-    .row{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0}
-    button{padding:12px 16px;border:1px solid #ccc;border-radius:10px;background:#fff}
-    code{background:#f4f4f4;padding:2px 6px;border-radius:6px}
-    .kv{margin:10px 0}.kv b{display:inline-block;min-width:260px}
-    .err{color:#b00020}
+    body{font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:24px}
+    h1{margin:0 0 16px}
+    .row{display:flex;gap:14px;flex-wrap:wrap;margin:18px 0}
+    button{padding:10px 14px;border:1px solid #ddd;border-radius:10px;background:#fff}
+    code,badge{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .kv{margin:8px 0}
+    .ok{color:#0a7a28}.warn{color:#a35d00}.err{color:#b00020}
+    .box{background:#f7f7f9;border:1px solid #eee;border-radius:12px;padding:12px}
   </style>
 </head>
 <body>
@@ -96,22 +37,109 @@
   <p>Проверяем: разрешение, регистрацию Service Worker и нативную push-подписку в нужном <code>scope</code>.</p>
 
   <div class="row">
-    <button onclick="askPermission()">Запросить разрешение</button>
-    <button onclick="checkSW()">Проверить SW</button>
-  </div>
-  <div class="row">
-    <button onclick="manualRegisterSW()">Ручная регистрация SW</button>
-    <button onclick="doOptIn()">Создать подписку (opt-in)</button>
-    <button onclick="showId()">Показать subscription ID</button>
+    <button id="ask">Запросить разрешение</button>
+    <button id="check">Проверить SW</button>
+    <button id="regsw">Ручная регистрация SW</button>
+    <button id="optin">Создать подписку (opt-in)</button>
+    <button id="show">Показать subscription ID</button>
   </div>
 
-  <div class="kv"><b>Статус SDK:</b> <span id="sdk">…</span></div>
-  <div class="kv"><b>Разрешение браузера:</b> <span id="perm">…</span></div>
-  <div class="kv"><b>Service Worker:</b> <span id="sw">…</span></div>
-  <div class="kv"><b>native push subscription:</b> <span id="native">…</span></div>
-  <div class="kv"><b>OneSignal User ID:</b> <span id="uid">…</span></div>
-  <div class="kv"><b>subscription id:</b> <span id="subid">…</span></div>
-  <div class="kv"><b>provider token (endpoint):</b> <span id="subtoken">…</span></div>
-  <div class="kv err" id="err"></div>
+  <div class="kv">Статус SDK: <span id="sdk" class="warn">…</span></div>
+  <div class="kv">Разрешение браузера: <span id="perm" class="warn">…</span></div>
+  <div class="kv">Service Worker: <span id="sw" class="warn">…</span></div>
+  <div class="kv">native push subscription: <span id="native" class="warn">…</span></div>
+  <div class="kv">OneSignal User ID: <code id="osid">null</code></div>
+  <div class="kv">subscription id: <code id="sid">null</code></div>
+  <div class="kv">provider token (endpoint): <code id="token">null</code></div>
+
+  <div class="box">
+    <div>Пути SDK:</div>
+    <div>WORKER: <code>/laneline-pages/OneSignalSDKWorker.js</code></div>
+    <div>UPDATER: <code>/laneline-pages/OneSignalSDKUpdaterWorker.js</code></div>
+    <div>scope: <code>/laneline-pages/</code></div>
+  </div>
+
+  <script>
+    (function () {
+      const $ = id => document.getElementById(id);
+      const set = (el, val, cls) => {
+        el.textContent = val;
+        if (cls) { el.className = cls; }
+      };
+
+      // Логика страницы после загрузки SDK
+      window.OneSignalDeferred.push(async function (OneSignal) {
+        // 1) Инициализация — просто отмечаем
+        set($('sdk'), 'OK • инициализирован', 'ok');
+
+        // 2) Показать текущее разрешение (v16: property permission)
+        //    docs: Web SDK reference → requestPermission / permission
+        set($('perm'), String(OneSignal.Notifications.permission), OneSignal.Notifications.permission ? 'ok' : 'warn');
+
+        // 3) Проверка регистрации SW и нативной подписки
+        async function refreshSWInfo() {
+          if (!('serviceWorker' in navigator)) { set($('sw'), 'нет поддержки', 'err'); return; }
+          const regs = await navigator.serviceWorker.getRegistrations();
+          const reg = regs.find(r => r.scope.includes('/laneline-pages/'));
+          if (reg) {
+            set($('sw'), 'registered • scope: https://erik2257.github.io/laneline-pages/', 'ok');
+            const sub = await reg.pushManager.getSubscription();
+            set($('native'), sub ? 'YES' : 'NO', sub ? 'ok' : 'warn');
+          } else {
+            set($('sw'), 'нет регистрации в scope /laneline-pages/', 'warn');
+            set($('native'), 'NO', 'warn');
+          }
+        }
+        refreshSWInfo();
+
+        // 4) Отображать OneSignal User ID, Subscription ID и Token
+        function paintIds() {
+          const osid = OneSignal.User.onesignalId || null; // docs: OneSignal.User.onesignalId
+          const sid = OneSignal.User.PushSubscription.id || null;   // docs: User.PushSubscription.id
+          const token = OneSignal.User.PushSubscription.token || null; // docs: User.PushSubscription.token
+          set($('osid'), osid);
+          set($('sid'), sid);
+          set($('token'), token);
+        }
+        paintIds();
+
+        // 5) Слушаем изменения подписки (получим id/token, когда OneSignal их присвоит)
+        //    docs: User.PushSubscription.addEventListener("change", …)
+        OneSignal.User.PushSubscription.addEventListener('change', (e) => {
+          paintIds();
+        });
+
+        // ------ Кнопки ------
+        $('ask').onclick = async () => {
+          await OneSignal.Notifications.requestPermission(); // docs: requestPermission()
+          set($('perm'), String(OneSignal.Notifications.permission), OneSignal.Notifications.permission ? 'ok' : 'warn');
+        };
+
+        $('check').onclick = refreshSWInfo;
+
+        $('regsw').onclick = async () => {
+          try {
+            await navigator.serviceWorker.register('/laneline-pages/OneSignalSDKWorker.js', { scope: '/laneline-pages/' });
+            await refreshSWInfo();
+          } catch (e) {
+            alert('SW register error: ' + (e && e.message || e));
+          }
+        };
+
+        // ВАЖНО: именно optIn(), а НЕ subscribe()
+        // docs: User.PushSubscription.optIn()
+        $('optin').onclick = async () => {
+          try {
+            await OneSignal.User.PushSubscription.optIn();
+            // id и token подтянутся в listener'е выше
+          } catch (e) {
+            alert('opt-in error: ' + (e && e.message || e));
+          }
+        };
+
+        $('show').onclick = paintIds;
+      });
+    })();
+  </script>
 </body>
 </html>
