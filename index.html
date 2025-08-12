@@ -1,100 +1,116 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Lane-Line — Web Push диагностика</title>
+
+  <!-- OneSignal Web SDK v16 -->
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+
+  <script>
+    // Инициализация OneSignal (пути и scope для /laneline-pages/)
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push(async function (OneSignal) {
+      try {
+        await OneSignal.init({
+          appId: "4d4e6237-e321-4209-a655-faac69188a85",
+          serviceWorkerPath: "/laneline-pages/OneSignalSDKWorker.js",
+          serviceWorkerUpdaterPath: "/laneline-pages/OneSignalSDKUpdaterWorker.js",
+          serviceWorkerParam: { scope: "/laneline-pages/" },
+          notifyButton: { enable: true }
+        });
+      } catch (e) {
+        setStatus("OneSignal init error: " + (e && e.message || e));
+      }
+    });
+
+    // помощник для строки статуса
+    function setStatus(msg){
+      const el = document.getElementById('status');
+      if (el) el.textContent = "Статус: " + msg;
+    }
+  </script>
+
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:20px}
-    button{margin:6px 8px 6px 0;padding:10px 14px;border:0;border-radius:10px}
-    .ok{color:#118a00}.warn{color:#b36b00}.err{color:#c52020}
-    #panel{margin-top:16px}
-    code{background:#f3f3f4;padding:2px 6px;border-radius:6px}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:24px}
+    .box{max-width:760px;margin:0 auto}
+    .muted{opacity:.7}
+    button{padding:10px 14px;border:0;border-radius:10px;background:#2d6cdf;color:#fff;cursor:pointer;margin-right:8px}
+    .row{margin:14px 0}
+    code{background:#f4f4f4;padding:2px 6px;border-radius:6px}
   </style>
 </head>
 <body>
-  <h1>Lane-Line — Web Push диагностика</h1>
-  <p>Проверяем: разрешение, регистрацию Service Worker и совпадение scope.</p>
+  <div class="box">
+    <h1>Lane-Line — Web Push диагностика</h1>
+    <p>Проверяем: разрешение, регистрацию Service Worker и совпадание scope.</p>
 
-  <button id="requestPermission">Запросить разрешение</button>
-  <button id="checkSW">Проверить SW</button>
-  <button id="reset">Сбросить (инструкция)</button>
+    <div class="row">
+      <button id="ask">Запросить разрешение</button>
+      <button id="check">Проверить SW</button>
+      <button id="reg">Ручная регистрация SW</button>
+    </div>
 
-  <div id="panel">
-    <p id="permissionStatus">Разрешение браузера: —</p>
-    <p>Текущий scope страницы: <code id="pageScope">—</code></p>
-    <p id="swStatus">Service Worker: —</p>
-    <p id="scopeMatch">Совпадение scope: —</p>
+    <p class="muted">Разрешение браузера: <span id="perm">…</span></p>
+    <p class="muted">Текущий scope страницы: <code id="pgscope">…</code></p>
+    <p id="status" class="muted">Статус: …</p>
+
+    <p class="muted">
+      Воркер: <code>/laneline-pages/OneSignalSDKWorker.js</code> ·
+      Updater: <code>/laneline-pages/OneSignalSDKUpdaterWorker.js</code>
+    </p>
   </div>
 
   <script>
-    // ===== утилиты =====
-    function pageScope(){
-      // scope каталога текущей страницы с завершающим слешем
-      const p = location.pathname;
-      return p.endsWith('/') ? p : p.replace(/[^/]+$/, '');
-    }
-    function set(el, html){ document.getElementById(el).innerHTML = html; }
+    (function(){
+      const $perm = document.getElementById('perm');
+      const $pgs  = document.getElementById('pgscope');
+      $pgs.textContent = (new URL(location.href)).pathname.replace(/[^/]+$/, '');
 
-    // ===== первичные значения =====
-    set('permissionStatus', "Разрешение браузера: " + Notification.permission);
-    set('pageScope', pageScope());
+      // показать текущее разрешение
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      window.OneSignalDeferred.push(async function(OneSignal){
+        try{
+          $perm.textContent = await OneSignal.Notifications.getPermissionStatus();
+        }catch(e){
+          setStatus("permission check error: " + (e && e.message || e));
+        }
+      });
 
-    // ===== запрос разрешения =====
-    document.getElementById('requestPermission').addEventListener('click', async () => {
-      const permission = await Notification.requestPermission();
-      set('permissionStatus', "Разрешение браузера: " +
-        (permission === 'granted' ? '<span class=ok>granted</span>' :
-         permission === 'denied' ? '<span class=err>denied</span>' : permission));
-    });
+      // кнопка: запрос разрешения
+      document.getElementById('ask').onclick = async () => {
+        try{
+          const res = await OneSignal.Notifications.requestPermission();
+          $perm.textContent = res;
+          setStatus("permission: " + res);
+        }catch(e){
+          setStatus("permission error: " + (e && e.message || e));
+        }
+      };
 
-    // ===== проверка service worker и совпадения scope =====
-    document.getElementById('checkSW').addEventListener('click', async () => {
-      if (!('serviceWorker' in navigator)) {
-        set('swStatus', '<span class=err>Service Worker не поддерживается</span>');
-        set('scopeMatch', '—');
-        return;
-      }
-
-      try{
+      // кнопка: проверить регистрации SW
+      document.getElementById('check').onclick = async () => {
+        if (!('serviceWorker' in navigator)) return setStatus("SW unsupported");
         const regs = await navigator.serviceWorker.getRegistrations();
-        if (!regs.length){
-          set('swStatus', '<span class=err>Не найдено ни одной регистрации</span>');
-          set('scopeMatch', '<span class=err>нет</span>');
-          return;
+        if (!regs.length) return setStatus("не найдено ни одной регистрации");
+        setStatus("найдено регистраций: " + regs.length + " • scopes: " + regs.map(r=>r.scope).join(", "));
+      };
+
+      // кнопка: РУЧНАЯ регистрация SW (в обход SDK)
+      document.getElementById('reg').onclick = async () => {
+        if (!('serviceWorker' in navigator)) return setStatus("SW unsupported");
+        try{
+          const reg = await navigator.serviceWorker.register(
+            "/laneline-pages/OneSignalSDKWorker.js",
+            { scope: "/laneline-pages/" }
+          );
+          setStatus("SW registered OK • scope: " + reg.scope);
+        }catch(e){
+          setStatus("SW register error: " + (e && (e.name + ": " + e.message) || e));
         }
-
-        const pgScope = pageScope();
-        // соберём инфо по всем SW
-        const info = regs.map(r => {
-          const state = r.active ? r.active.state : (r.installing ? 'installing' : 'неактивен');
-          return `${r.scope} (state: ${state})`;
-        }).join('<br>');
-
-        set('swStatus', `Найдено регистраций: ${regs.length}<br>${info}`);
-
-        // совпадает ли хоть один scope с нашим каталогом страницы
-        const matched = regs.some(r => r.scope.endsWith(pgScope));
-        if (matched){
-          set('scopeMatch', '<span class=ok>да, есть регистрация в текущем scope</span>');
-        }else{
-          set('scopeMatch', `<span class=warn>нет, среди зарегистрированных SW нет scope, заканчивающегося на</span> <code>${pgScope}</code>`);
-        }
-      }catch(e){
-        set('swStatus', '<span class=err>Ошибка проверки SW: ' + (e && e.message || e) + '</span>');
-        set('scopeMatch', '—');
-      }
-    });
-
-    // ===== сброс: краткая инструкция =====
-    document.getElementById('reset').addEventListener('click', () => {
-      alert(
-`Сброс на телефоне (Chrome):
-1) Открой адрес сайта.
-2) ⋮ → Инфо о сайте → Удалить данные (или «Очистить и сбросить»).
-3) Перезапусти вкладку.
-4) При необходимости удали SW вручную: chrome://serviceworker-internals/ → Unregister у соответствующего scope.`
-      );
-    });
+      };
+    })();
   </script>
 </body>
 </html>
