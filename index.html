@@ -23,9 +23,9 @@
         set('sdk', 'ошибка инициализации: ' + (e?.message || e));
       }
 
-      // Обновлять блоки статуса при любых изменениях подписки
-      OneSignal.User.PushSubscription.addEventListener('change', function (ev) {
-        renderSubStatus();
+      // Обновлять статусы при изменении подписки
+      OneSignal.User.PushSubscription.addEventListener('change', async () => {
+        await renderSubStatus();
       });
 
       // Показать текущее состояние при старте
@@ -37,8 +37,7 @@
     function set(id, msg){ const n = el(id); if(n) n.innerHTML = msg; }
 
     async function renderPermission(){
-      // true / false (в v16 это свойство)
-      const perm = window.OneSignal?.Notifications?.permission;
+      const perm = window.OneSignal?.Notifications?.permission; // true/false в v16
       set('perm', String(perm));
     }
 
@@ -58,13 +57,20 @@
     async function renderSubStatus(){
       const OS = window.OneSignal;
       if (!OS) return;
-      // optedIn = true/false
+
       const opted = OS.User?.PushSubscription?.optedIn === true;
       set('native', opted ? 'YES' : 'NO');
 
-      // id может появиться чуть позже — покажем null, а слушатель выше обновит
-      const id = OS.User?.PushSubscription?.id ?? null;
-      set('subid', id ? ('<code>'+id+'</code>') : 'null');
+      // ВАЖНО: id и token — асинхронные
+      try {
+        const id = await OS.User.PushSubscription.id;
+        set('subid', id ? ('<code>'+id+'</code>') : 'null');
+      } catch { set('subid', 'null'); }
+
+      try {
+        const token = await OS.User.PushSubscription.token; // endpoint / prov. token
+        set('subtoken', token ? ('<code>'+token+'</code>') : 'null');
+      } catch { set('subtoken', 'null'); }
     }
 
     function renderAll(){
@@ -76,9 +82,7 @@
 
     // === КНОПКИ ===
     async function askPermission(){
-      try{
-        await window.OneSignal?.Notifications?.requestPermission();
-      }catch(e){}
+      try{ await window.OneSignal?.Notifications?.requestPermission(); }catch(e){}
       renderPermission();
     }
 
@@ -94,24 +98,18 @@
       }
     }
 
-    async function checkSW(){
-      renderSW();
-    }
+    async function checkSW(){ renderSW(); }
 
     async function doOptIn(){
       try{
         await window.OneSignal?.User?.PushSubscription?.optIn();
-        // после optIn ждём listener 'change', но обновим и сразу
-        renderSubStatus();
+        await renderSubStatus();
       }catch(e){
         alert('opt-in error: ' + (e?.message || e));
       }
     }
 
-    async function showId(){
-      renderSubStatus();
-      // ничего больше — ID уже выводится в блоке ниже
-    }
+    async function showId(){ await renderSubStatus(); }
   </script>
 
   <style>
@@ -121,7 +119,7 @@
     button{padding:12px 16px;border:1px solid #ccc;border-radius:10px;background:#fff}
     code{background:#f4f4f4;padding:2px 6px;border-radius:6px}
     .kv{margin:10px 0}
-    .kv b{display:inline-block;min-width:210px}
+    .kv b{display:inline-block;min-width:270px}
   </style>
 </head>
 <body>
@@ -142,6 +140,7 @@
   <div class="kv"><b>Разрешение браузера:</b> <span id="perm">…</span></div>
   <div class="kv"><b>Service Worker:</b> <span id="sw">…</span></div>
   <div class="kv"><b>native push subscription:</b> <span id="native">…</span></div>
-  <div class="kv"><b>subscription id / endpoint:</b> <span id="subid">…</span></div>
+  <div class="kv"><b>subscription id:</b> <span id="subid">…</span></div>
+  <div class="kv"><b>provider token (endpoint):</b> <span id="subtoken">…</span></div>
 </body>
 </html>
